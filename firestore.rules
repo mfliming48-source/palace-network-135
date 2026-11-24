@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function activeUser() {
+      return signedIn() && userDoc().active == true;
+    }
+    function isAdmin() {
+      return activeUser() && userDoc().role == "admin";
+    }
+    function canEdit() {
+      return activeUser() && userDoc().role in ["admin", "technician"];
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // A user cannot assign their own role. Admin provisions user profiles in console/app.
+      allow create, update, delete: if isAdmin() && request.resource.data.role in ["admin", "technician", "viewer"];
+    }
+    match /ip_addresses/{ipId} {
+      allow read: if activeUser();
+      allow create, update: if canEdit();
+      allow delete: if isAdmin();
+    }
+    match /equipment_categories/{id} {
+      allow read: if activeUser();
+      allow write: if isAdmin();
+    }
+    match /ip_ranges/{id} {
+      allow read: if activeUser();
+      allow write: if isAdmin();
+    }
+    match /activity_logs/{id} {
+      allow read: if activeUser();
+      allow create: if canEdit();
+      allow update, delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
